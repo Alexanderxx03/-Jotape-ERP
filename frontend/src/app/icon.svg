@@ -1,0 +1,5 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100" height="100" rx="20" fill="#111111"/>
+  <text x="50" y="65" fill="#FFE600" style="font-family: system-ui, sans-serif; font-weight: 900; font-size: 60px;" text-anchor="end" stroke="#ffffff" stroke-width="2">J</text>
+  <text x="50" y="65" fill="#D41C95" style="font-family: system-ui, sans-serif; font-weight: 900; font-size: 60px;" stroke="#ffffff" stroke-width="2">P</text>
+</svg>

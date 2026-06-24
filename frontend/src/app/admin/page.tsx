@@ -1,23 +1,21 @@
 "use client";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { Users, Package, Banknote, Scissors, Shirt, Loader2, LayoutDashboard } from "lucide-react";
+import { Users, Package, Scissors, Shirt, Loader2, LayoutDashboard, ScrollText, AlertTriangle, AlertCircle, TrendingUp, Layers, Box } from "lucide-react";
 import { useState, useEffect } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { AlertCircle, AlertTriangle } from "lucide-react";
 
-type Tab = 'resumen' | 'empleados' | 'ventas' | 'inventario' | 'produccion';
+type Tab = 'resumen' | 'empleados' | 'inventario' | 'produccion';
 
 export default function MasterDashboard() {
     const [activeTab, setActiveTab] = useState<Tab>('resumen');
     const [loading, setLoading] = useState(true);
-    const [ventaSeleccionada, setVentaSeleccionada] = useState<any>(null);
 
     const [data, setData] = useState({
         usuarios: [] as any[],
-        ventas: [] as any[],
         inventario: [] as any[],
+        rollos: [] as any[],
         corte: [] as any[],
         costura: [] as any[]
     });
@@ -30,11 +28,11 @@ export default function MasterDashboard() {
                 const usrs: any[] = [];
                 usersSnap.forEach(d => usrs.push({ id: d.id, ...d.data() }));
 
-                // 2. Ventas
-                const ventasQ = query(collection(db, 'ventas'), orderBy('fecha_registro', 'desc'));
-                const ventasSnap = await getDocs(ventasQ);
-                const vnts: any[] = [];
-                ventasSnap.forEach(d => vnts.push({ id: d.id, ...d.data() }));
+                // 2. Rollos de Tela
+                const rollosQ = query(collection(db, 'inventario_rollos'), orderBy('fecha_registro', 'desc'));
+                const rollosSnap = await getDocs(rollosQ);
+                const rlls: any[] = [];
+                rollosSnap.forEach(d => rlls.push({ id: d.id, ...d.data() }));
 
                 // 3. Inventario
                 const invQ = query(collection(db, 'entradas_inventario'), orderBy('fecha_registro', 'desc'));
@@ -56,8 +54,8 @@ export default function MasterDashboard() {
 
                 setData({
                     usuarios: usrs,
-                    ventas: vnts,
                     inventario: inv,
+                    rollos: rlls,
                     corte: crt,
                     costura: cst
                 });
@@ -72,26 +70,22 @@ export default function MasterDashboard() {
     }, []);
 
     // Helper derivations
-    const totalVentasSoles = data.ventas.reduce((acc, curr) => acc + (curr.total_venta || 0), 0);
+    const totalRollosDisponibles = data.rollos.reduce((acc, curr) => acc + (curr.disponible !== false ? (curr.cantidad_rollos || 0) : 0), 0);
     const totalInventarioUnids = data.inventario.reduce((acc, curr) => acc + (curr.cantidad || curr.total_ingresado || 0), 0);
     const totalCorte = data.corte.reduce((acc, curr) => acc + (curr.cantidad || curr.total_cortado || 0), 0);
     const totalCostura = data.costura.reduce((acc, curr) => acc + (curr.cantidad || curr.total_confeccionado || 0), 0);
 
     // Preparar datos para Gráficas
     const prepararGraficos = () => {
-        // Ventas por Categoría
-        const ventasPorCategoria: Record<string, number> = {};
-        data.ventas.forEach(v => {
-            if (v.productos && Array.isArray(v.productos)) {
-                v.productos.forEach((p: any) => {
-                    const cat = p.categoria || "Otros";
-                    ventasPorCategoria[cat] = (ventasPorCategoria[cat] || 0) + (p.cantidad || 0);
-                });
-            }
+        // Stock por Categoría (desde inventario)
+        const stockPorCategoria: Record<string, number> = {};
+        data.inventario.forEach(i => {
+            const cat = i.categoria || "Otros";
+            stockPorCategoria[cat] = (stockPorCategoria[cat] || 0) + (i.cantidad || i.total_ingresado || 0);
         });
-        const dVentasCat = Object.keys(ventasPorCategoria).map(key => ({
+        const dStockCat = Object.keys(stockPorCategoria).map(key => ({
             name: key,
-            cantidad: ventasPorCategoria[key]
+            cantidad: stockPorCategoria[key]
         }));
 
         // Producción por Prenda (Corte vs Costura combinados)
@@ -114,104 +108,154 @@ export default function MasterDashboard() {
             }
         });
 
-        data.ventas.forEach(v => {
-            if (v.productos && Array.isArray(v.productos)) {
-                v.productos.forEach((p: any) => {
-                    const id = `${p.categoria}-${p.tipo}-${p.publico}-${p.talla}-${p.color}`;
-                    if (!stockItems[id]) stockItems[id] = { tipo: `${p.categoria} ${p.tipo}`, atributos: `${p.publico} Talla ${p.talla} (${p.color})`, cantidad: 0 };
-                    stockItems[id].cantidad -= p.cantidad;
-                });
-            }
-        });
-
         const alertasStock = Object.values(stockItems).filter(item => item.cantidad <= 5 && item.cantidad > 0);
         const agotados = Object.values(stockItems).filter(item => item.cantidad <= 0);
 
-        return { dVentasCat, dProduccionResumen, alertasStock, agotados };
+        return { dStockCat, dProduccionResumen, alertasStock, agotados };
     };
 
-    const { dVentasCat, dProduccionResumen, alertasStock, agotados } = prepararGraficos();
-    const COLORS = ['#f97316', '#a855f7', '#14b8a6', '#3b82f6', '#ef4444'];
+    const { dStockCat, dProduccionResumen, alertasStock, agotados } = prepararGraficos();
+    const COLORS = ['#f97316', '#8b5cf6', '#14b8a6', '#0ea5e9', '#ec4899'];
 
     return (
-        <ProtectedRoute allowedRoles={["master"]}>
-            <div className="space-y-6">
-                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                    <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-white">Panel Principal (Master)</h1>
+        <ProtectedRoute allowedAreas={["master"]}>
+            <div className="space-y-8 pb-10 max-w-7xl mx-auto">
+                
+                {/* HEADERS - BRUTALIST STYLE */}
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 border-b border-zinc-200 dark:border-white/5 pb-6">
+                    <div>
+                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter text-zinc-900 dark:text-white drop-shadow-sm flex items-center gap-3">
+                            <Layers className="w-10 h-10 text-orange-500" />
+                            PANEL MASTER
+                        </h1>
+                        <p className="text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.2em] text-xs font-bold mt-2">
+                            Sistema Central de Operaciones y Producción
+                        </p>
+                    </div>
 
-                    {/* Tab Navigation */}
-                    <div className="flex bg-white dark:bg-zinc-950 p-1 rounded-xl shadow-sm border border-stone-200 dark:border-zinc-800 overflow-x-auto">
-                        <TabButton active={activeTab === 'resumen'} onClick={() => setActiveTab('resumen')} icon={<LayoutDashboard className="w-4 h-4 mr-2" />} label="Resumen" />
-                        <TabButton active={activeTab === 'empleados'} onClick={() => setActiveTab('empleados')} icon={<Users className="w-4 h-4 mr-2" />} label="Empleados" />
-                        <TabButton active={activeTab === 'ventas'} onClick={() => setActiveTab('ventas')} icon={<Banknote className="w-4 h-4 mr-2" />} label="Ventas" />
-                        <TabButton active={activeTab === 'inventario'} onClick={() => setActiveTab('inventario')} icon={<Package className="w-4 h-4 mr-2" />} label="Inventario" />
-                        <TabButton active={activeTab === 'produccion'} onClick={() => setActiveTab('produccion')} icon={<Scissors className="w-4 h-4 mr-2" />} label="Producción" />
+                    <div className="flex bg-zinc-100 dark:bg-black/60 backdrop-blur-2xl p-1.5 rounded-2xl border border-zinc-200 dark:border-white/10 shadow-lg dark:shadow-2xl gap-2 overflow-x-auto scrollbar-hide">
+                        <TabButton active={activeTab === 'resumen'} onClick={() => setActiveTab('resumen')} icon={<LayoutDashboard className="w-4 h-4 mr-2" />} label="RESUMEN" />
+                        <TabButton active={activeTab === 'empleados'} onClick={() => setActiveTab('empleados')} icon={<Users className="w-4 h-4 mr-2" />} label="EMPLEADOS" />
+                        <TabButton active={activeTab === 'inventario'} onClick={() => setActiveTab('inventario')} icon={<Package className="w-4 h-4 mr-2" />} label="INVENTARIO" />
+                        <TabButton active={activeTab === 'produccion'} onClick={() => setActiveTab('produccion')} icon={<Scissors className="w-4 h-4 mr-2" />} label="PRODUCCIÓN" />
                     </div>
                 </div>
 
                 {loading ? (
                     <div className="flex justify-center items-center py-32">
-                        <Loader2 className="w-12 h-12 text-orange-600 animate-spin" />
+                        <div className="relative">
+                            <div className="absolute inset-0 blur-xl bg-orange-500/30 rounded-full animate-pulse" />
+                            <Loader2 className="w-12 h-12 text-orange-500 animate-spin relative z-10" />
+                        </div>
                     </div>
                 ) : (
-                    <div className="mt-6">
+                    <div className="animate-fadeIn">
                         {activeTab === 'resumen' && (
-                            <div className="space-y-6">
+                            <div className="space-y-8">
+                                {/* STAT CARDS */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <StatCard icon={<Banknote className="w-6 h-6" />} color="green" title="Ventas Totales" value={`S/ ${totalVentasSoles.toFixed(2)}`} />
-                                    <StatCard icon={<Package className="w-6 h-6" />} color="orange" title="Entradas a Inventario" value={`${totalInventarioUnids} unds.`} />
-                                    <StatCard icon={<Scissors className="w-6 h-6" />} color="purple" title="Producción: Corte" value={`${totalCorte} pcs.`} />
-                                    <StatCard icon={<Shirt className="w-6 h-6" />} color="teal" title="Producción: Costura" value={`${totalCostura} prendas`} />
+                                    <StatCard 
+                                        icon={<Package className="w-5 h-5 text-emerald-400" />} 
+                                        title="ROLLOS DE TELA" 
+                                        value={totalRollosDisponibles.toString()} 
+                                        subtitle="Disponibles"
+                                        glowColor="group-hover:shadow-[0_0_30px_-5px_rgba(52,211,153,0.3)]"
+                                    />
+                                    <StatCard 
+                                        icon={<Box className="w-5 h-5 text-orange-400" />} 
+                                        title="STOCK PRENDAS" 
+                                        value={totalInventarioUnids.toString()} 
+                                        subtitle="Unidades totales"
+                                        glowColor="group-hover:shadow-[0_0_30px_-5px_rgba(249,115,22,0.3)]"
+                                    />
+                                    <StatCard 
+                                        icon={<Scissors className="w-5 h-5 text-purple-400" />} 
+                                        title="ÁREA CORTE" 
+                                        value={totalCorte.toString()} 
+                                        subtitle="Piezas cortadas"
+                                        glowColor="group-hover:shadow-[0_0_30px_-5px_rgba(168,85,247,0.3)]"
+                                    />
+                                    <StatCard 
+                                        icon={<Shirt className="w-5 h-5 text-teal-400" />} 
+                                        title="ÁREA COSTURA" 
+                                        value={totalCostura.toString()} 
+                                        subtitle="Prendas confeccionadas"
+                                        glowColor="group-hover:shadow-[0_0_30px_-5px_rgba(45,212,191,0.3)]"
+                                    />
                                 </div>
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                                <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                                     {/* Gráfica de Barras */}
-                                    <div className="bg-white dark:bg-zinc-950 p-6 rounded-2xl shadow-sm border border-stone-200 dark:border-zinc-800">
-                                        <h2 className="text-xl font-bold mb-6">Flujo de Producción</h2>
-                                        <div className="h-64">
+                                    <div className="lg:col-span-3 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-xl relative overflow-hidden group">
+                                        <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/5 rounded-full blur-[100px] pointer-events-none group-hover:bg-orange-500/10 transition-colors duration-700" />
+                                        
+                                        <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-8 flex items-center text-zinc-800 dark:text-zinc-300 relative z-10">
+                                            <TrendingUp className="w-5 h-5 mr-3 text-orange-500" /> Flujo de Producción
+                                        </h2>
+                                        
+                                        <div className="h-72 relative z-10">
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={dProduccionResumen}>
-                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.3} />
-                                                    <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={12} tick={{ fill: '#71717a' }} />
-                                                    <YAxis axisLine={false} tickLine={false} fontSize={12} tick={{ fill: '#71717a' }} />
-                                                    <RechartsTooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#fff', borderRadius: '8px' }} />
-                                                    <Bar dataKey="total" fill="#f97316" radius={[4, 4, 0, 0]} />
+                                                <BarChart data={dProduccionResumen} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#52525b" opacity={0.2} />
+                                                    <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} tick={{ fill: '#71717a' }} dy={10} />
+                                                    <YAxis axisLine={false} tickLine={false} fontSize={10} tick={{ fill: '#71717a' }} />
+                                                    <RechartsTooltip 
+                                                        cursor={{ fill: 'rgba(249, 115, 22, 0.05)' }} 
+                                                        contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', color: '#fff', borderRadius: '12px', padding: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }} 
+                                                        itemStyle={{ color: '#f97316', fontWeight: 'bold' }}
+                                                    />
+                                                    <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                                                        {dProduccionResumen.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={index === 0 ? '#a855f7' : index === 1 ? '#2dd4bf' : '#f97316'} />
+                                                        ))}
+                                                    </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
                                         </div>
                                     </div>
 
-                                    {/* Gráfica de Pastel */}
-                                    <div className="bg-white dark:bg-zinc-950 p-6 rounded-2xl shadow-sm border border-stone-200 dark:border-zinc-800">
-                                        <h2 className="text-xl font-bold mb-6">Ventas por Categoría (Unidades)</h2>
-                                        <div className="h-64">
-                                            {dVentasCat.length > 0 ? (
+                                    {/* Gráfica de Pastel - Stock por Categoría */}
+                                    <div className="lg:col-span-2 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-xl relative overflow-hidden group">
+                                        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-[100px] pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-700" />
+                                        
+                                        <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-6 flex items-center text-zinc-800 dark:text-zinc-300 relative z-10">
+                                            <Package className="w-5 h-5 mr-3 text-blue-500" /> Distribución Stock
+                                        </h2>
+                                        
+                                        <div className="h-56 relative z-10">
+                                            {dStockCat.length > 0 ? (
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <PieChart>
                                                         <Pie
-                                                            data={dVentasCat}
+                                                            data={dStockCat}
                                                             cx="50%"
                                                             cy="50%"
-                                                            innerRadius={60}
+                                                            innerRadius={50}
                                                             outerRadius={80}
                                                             paddingAngle={5}
                                                             dataKey="cantidad"
+                                                            stroke="none"
                                                         >
-                                                            {dVentasCat.map((entry, index) => (
+                                                            {dStockCat.map((entry, index) => (
                                                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                             ))}
                                                         </Pie>
-                                                        <RechartsTooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#fff', borderRadius: '8px' }} />
+                                                        <RechartsTooltip 
+                                                            contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', color: '#fff', borderRadius: '12px' }} 
+                                                            itemStyle={{ fontWeight: 'bold' }}
+                                                        />
                                                     </PieChart>
                                                 </ResponsiveContainer>
                                             ) : (
-                                                <div className="h-full flex items-center justify-center text-stone-500">No hay datos de ventas.</div>
+                                                <div className="h-full flex items-center justify-center text-zinc-500 font-medium">Sin datos de inventario</div>
                                             )}
                                         </div>
-                                        <div className="flex flex-wrap justify-center mt-2 gap-3">
-                                            {dVentasCat.map((entry, i) => (
-                                                <div key={entry.name} className="flex items-center text-xs">
-                                                    <span className="w-3 h-3 rounded-full mr-1" style={{ backgroundColor: COLORS[i % COLORS.length] }}></span>
-                                                    {entry.name} ({entry.cantidad})
+                                        
+                                        <div className="flex flex-wrap justify-center mt-4 gap-2 relative z-10">
+                                            {dStockCat.map((entry, i) => (
+                                                <div key={entry.name} className="flex items-center text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-zinc-100 dark:bg-black/40 border border-zinc-200 dark:border-white/5">
+                                                    <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: COLORS[i % COLORS.length] }}></span>
+                                                    {entry.name} <span className="text-zinc-500 ml-1">({entry.cantidad})</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -220,46 +264,51 @@ export default function MasterDashboard() {
 
                                 {/* Panel de Stock y Alertas */}
                                 {(alertasStock.length > 0 || agotados.length > 0) && (
-                                    <div className="bg-orange-50 dark:bg-orange-950/20 p-6 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-900/40">
-                                        <h2 className="text-xl font-bold mb-4 flex items-center text-orange-800 dark:text-orange-500">
-                                            <AlertTriangle className="w-6 h-6 mr-2" /> Alertas de Inventario
+                                    <div className="bg-red-50/50 dark:bg-red-950/10 backdrop-blur-md p-8 rounded-[2rem] border border-red-200 dark:border-red-900/30 shadow-xl relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-full h-full bg-red-500/5 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-red-500/10 via-transparent to-transparent pointer-events-none" />
+                                        
+                                        <h2 className="text-xl font-black tracking-tight mb-6 flex items-center text-red-600 dark:text-red-500 relative z-10">
+                                            <AlertTriangle className="w-6 h-6 mr-3" /> ALERTAS CRÍTICAS DE INVENTARIO
                                         </h2>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
                                             {/* Agotados */}
                                             {agotados.length > 0 && (
-                                                <div>
-                                                    <h3 className="text-sm font-bold text-red-600 dark:text-red-400 mb-3 flex items-center"><AlertCircle className="w-4 h-4 mr-1" /> STOCK AGOTADO</h3>
-                                                    <ul className="space-y-2">
-                                                        {agotados.slice(0, 10).map((item, idx) => (
-                                                            <li key={idx} className="bg-white dark:bg-zinc-900 p-3 rounded-lg flex justify-between items-center shadow-sm">
+                                                <div className="space-y-4">
+                                                    <h3 className="text-[11px] font-black text-red-600 dark:text-red-400 uppercase tracking-[0.2em] flex items-center bg-red-100 dark:bg-red-950/50 px-3 py-1.5 rounded-lg w-fit">
+                                                        <AlertCircle className="w-3 h-3 mr-2" /> STOCK AGOTADO
+                                                    </h3>
+                                                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                                        {agotados.map((item, idx) => (
+                                                            <div key={idx} className="bg-white dark:bg-black/40 p-4 rounded-xl flex justify-between items-center border border-red-100 dark:border-red-900/30">
                                                                 <div>
-                                                                    <p className="font-bold text-stone-800 dark:text-stone-200 text-sm capitalize">{item.tipo}</p>
-                                                                    <p className="text-xs text-stone-500 dark:text-stone-400 capitalize">{item.atributos}</p>
+                                                                    <p className="font-bold text-zinc-900 dark:text-zinc-100 text-sm capitalize">{item.tipo}</p>
+                                                                    <p className="text-xs text-zinc-500 dark:text-zinc-400 capitalize mt-1">{item.atributos}</p>
                                                                 </div>
-                                                                <span className="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold">0 u.</span>
-                                                            </li>
+                                                                <span className="bg-red-500 text-white px-3 py-1 rounded-md text-xs font-black tracking-widest shadow-[0_0_15px_-3px_rgba(239,68,68,0.5)]">0 u.</span>
+                                                            </div>
                                                         ))}
-                                                        {agotados.length > 10 && <li className="text-xs text-stone-500">Y {agotados.length - 10} artículos más...</li>}
-                                                    </ul>
+                                                    </div>
                                                 </div>
                                             )}
 
                                             {/* Poco Stock */}
                                             {alertasStock.length > 0 && (
-                                                <div>
-                                                    <h3 className="text-sm font-bold text-orange-600 dark:text-orange-400 mb-3 flex items-center"><AlertTriangle className="w-4 h-4 mr-1" /> STOCK BAJO (≤ 5)</h3>
-                                                    <ul className="space-y-2">
-                                                        {alertasStock.slice(0, 10).map((item, idx) => (
-                                                            <li key={idx} className="bg-white dark:bg-zinc-900 p-3 rounded-lg flex justify-between items-center shadow-sm">
+                                                <div className="space-y-4">
+                                                    <h3 className="text-[11px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-[0.2em] flex items-center bg-orange-100 dark:bg-orange-950/50 px-3 py-1.5 rounded-lg w-fit">
+                                                        <AlertTriangle className="w-3 h-3 mr-2" /> STOCK BAJO (≤ 5)
+                                                    </h3>
+                                                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                                        {alertasStock.map((item, idx) => (
+                                                            <div key={idx} className="bg-white dark:bg-black/40 p-4 rounded-xl flex justify-between items-center border border-orange-100 dark:border-orange-900/30">
                                                                 <div>
-                                                                    <p className="font-bold text-stone-800 dark:text-stone-200 text-sm capitalize">{item.tipo}</p>
-                                                                    <p className="text-xs text-stone-500 dark:text-stone-400 capitalize">{item.atributos}</p>
+                                                                    <p className="font-bold text-zinc-900 dark:text-zinc-100 text-sm capitalize">{item.tipo}</p>
+                                                                    <p className="text-xs text-zinc-500 dark:text-zinc-400 capitalize mt-1">{item.atributos}</p>
                                                                 </div>
-                                                                <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded text-xs font-bold">{item.cantidad} u.</span>
-                                                            </li>
+                                                                <span className="bg-orange-500/10 text-orange-600 dark:text-orange-400 px-3 py-1 rounded-md text-xs font-black tracking-widest border border-orange-500/20">{item.cantidad} u.</span>
+                                                            </div>
                                                         ))}
-                                                        {alertasStock.length > 10 && <li className="text-xs text-stone-500">Y {alertasStock.length - 10} artículos más...</li>}
-                                                    </ul>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -269,141 +318,123 @@ export default function MasterDashboard() {
                         )}
 
                         {activeTab === 'empleados' && (
-                            <DataPanel title="Empleados del Sistema" icon={<Users className="w-6 h-6 mr-2 text-blue-500" />}>
-                                <table className="w-full text-left text-sm text-stone-600 dark:text-stone-400">
-                                    <thead className="bg-stone-50 dark:bg-zinc-900 text-xs uppercase font-medium">
-                                        <tr>
-                                            <th className="px-4 py-3">Nombre</th>
-                                            <th className="px-4 py-3">Correo</th>
-                                            <th className="px-4 py-3">Rol</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {data.usuarios.map(u => (
-                                            <tr key={u.id} className="border-b border-stone-100 dark:border-zinc-800">
-                                                <td className="px-4 py-3 font-bold text-stone-900 dark:text-white">{u.displayName || "Desconocido"}</td>
-                                                <td className="px-4 py-3">{u.email}</td>
-                                                <td className="px-4 py-3">
-                                                    <span className="px-2 py-1 bg-stone-100 dark:bg-zinc-800 rounded font-bold capitalize text-xs">{u.role}</span>
-                                                </td>
+                            <div className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-xl">
+                                <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-6 flex items-center text-zinc-800 dark:text-zinc-300">
+                                    <Users className="w-5 h-5 mr-3 text-blue-500" /> Registro de Personal
+                                </h2>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="text-[10px] uppercase font-black tracking-widest text-zinc-500 border-b border-zinc-200 dark:border-white/5">
+                                            <tr>
+                                                <th className="px-4 py-4">Operador</th>
+                                                <th className="px-4 py-4">Contacto</th>
+                                                <th className="px-4 py-4">Rol Asignado</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </DataPanel>
-                        )}
-
-                        {activeTab === 'ventas' && (
-                            <DataPanel title="Detalle de Ventas" icon={<Banknote className="w-6 h-6 mr-2 text-green-500" />}>
-                                <table className="w-full text-left text-sm text-stone-600 dark:text-stone-400">
-                                    <thead className="bg-stone-50 dark:bg-zinc-900 text-xs uppercase font-medium">
-                                        <tr>
-                                            <th className="px-4 py-3">ID Venta</th>
-                                            <th className="px-4 py-3">Vendedor</th>
-                                            <th className="px-4 py-3 text-right">Items</th>
-                                            <th className="px-4 py-3 text-right">Monto</th>
-                                            <th className="px-4 py-3 text-center">Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {data.ventas.map(v => (
-                                            <tr key={v.id} className="border-b border-stone-100 dark:border-zinc-800">
-                                                <td className="px-4 py-3 font-medium text-stone-900 dark:text-white">{v.id_venta}</td>
-                                                <td className="px-4 py-3">{v.nombre_vendedor}</td>
-                                                <td className="px-4 py-3 text-right">{v.productos?.length || 0} prod(s).</td>
-                                                <td className="px-4 py-3 font-bold text-green-600 text-right">S/ {v.total_venta?.toFixed(2)}</td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <button
-                                                        onClick={() => setVentaSeleccionada(v)}
-                                                        className="text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                                                    >
-                                                        Ver Detalle
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </DataPanel>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-200 dark:divide-white/5">
+                                            {data.usuarios.map(u => (
+                                                <tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
+                                                    <td className="px-4 py-4 font-bold text-zinc-900 dark:text-white group-hover:text-blue-500 transition-colors">{u.displayName || "Desconocido"}</td>
+                                                    <td className="px-4 py-4 text-zinc-600 dark:text-zinc-400">{u.email}</td>
+                                                    <td className="px-4 py-4">
+                                                        <span className="px-3 py-1 bg-zinc-100 dark:bg-black border border-zinc-200 dark:border-white/10 rounded-md font-bold uppercase tracking-wider text-[10px] text-zinc-700 dark:text-zinc-300">
+                                                            {u.role}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         )}
 
                         {activeTab === 'inventario' && (
-                            <DataPanel title="Ingresos de Inventario" icon={<Package className="w-6 h-6 mr-2 text-orange-500" />}>
-                                <table className="w-full text-left text-sm text-stone-600 dark:text-stone-400">
-                                    <thead className="bg-stone-50 dark:bg-zinc-900 text-xs uppercase font-medium">
-                                        <tr>
-                                            <th className="px-4 py-3">ID Ingreso</th>
-                                            <th className="px-4 py-3">Usuario (Almacén)</th>
-                                            <th className="px-4 py-3">Prenda</th>
-                                            <th className="px-4 py-3 text-right">Cantidad</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {data.inventario.map(i => (
-                                            <tr key={i.id} className="border-b border-stone-100 dark:border-zinc-800">
-                                                <td className="px-4 py-3 font-medium text-stone-900 dark:text-white">{i.id_entrada}</td>
-                                                <td className="px-4 py-3">{i.nombre_usuario}</td>
-                                                <td className="px-4 py-3 capitalize">{i.tipo_producto}</td>
-                                                <td className="px-4 py-3 font-bold text-right">+{i.cantidad || i.total_ingresado || 0}</td>
+                            <div className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-xl">
+                                <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-6 flex items-center text-zinc-800 dark:text-zinc-300">
+                                    <Package className="w-5 h-5 mr-3 text-emerald-500" /> Movimientos de Ingreso
+                                </h2>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="text-[10px] uppercase font-black tracking-widest text-zinc-500 border-b border-zinc-200 dark:border-white/5">
+                                            <tr>
+                                                <th className="px-4 py-4">ID Transacción</th>
+                                                <th className="px-4 py-4">Responsable</th>
+                                                <th className="px-4 py-4">Referencia</th>
+                                                <th className="px-4 py-4 text-right">Volumen</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </DataPanel>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-200 dark:divide-white/5">
+                                            {data.inventario.map(i => (
+                                                <tr key={i.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
+                                                    <td className="px-4 py-4 font-mono text-xs text-zinc-500">{i.id_entrada}</td>
+                                                    <td className="px-4 py-4 font-bold text-zinc-900 dark:text-white">{i.nombre_usuario}</td>
+                                                    <td className="px-4 py-4 text-zinc-600 dark:text-zinc-400 capitalize">{i.tipo_producto}</td>
+                                                    <td className="px-4 py-4 font-black text-right text-emerald-600 dark:text-emerald-400">+{i.cantidad || i.total_ingresado || 0} u.</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         )}
 
                         {activeTab === 'produccion' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <DataPanel title="Lotes de Corte" icon={<Scissors className="w-6 h-6 mr-2 text-purple-500" />}>
-                                    <table className="w-full text-left text-sm text-stone-600 dark:text-stone-400">
-                                        <thead className="bg-stone-50 dark:bg-zinc-900 text-xs uppercase font-medium">
-                                            <tr>
-                                                <th className="px-4 py-3">ID</th>
-                                                <th className="px-4 py-3">Usuario</th>
-                                                <th className="px-4 py-3 text-right">Cant.</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {data.corte.map(c => (
-                                                <tr key={c.id} className="border-b border-stone-100 dark:border-zinc-800">
-                                                    <td className="px-4 py-3 font-medium">{c.id_registro}</td>
-                                                    <td className="px-4 py-3">{c.nombre_usuario}</td>
-                                                    <td className="px-4 py-3 font-bold text-right">{c.cantidad || c.total_cortado || 0}</td>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                <div className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-xl">
+                                    <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-6 flex items-center text-zinc-800 dark:text-zinc-300">
+                                        <Scissors className="w-5 h-5 mr-3 text-purple-500" /> Registros de Corte
+                                    </h2>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="text-[10px] uppercase font-black tracking-widest text-zinc-500 border-b border-zinc-200 dark:border-white/5">
+                                                <tr>
+                                                    <th className="px-4 py-4">Lote ID</th>
+                                                    <th className="px-4 py-4">Operador</th>
+                                                    <th className="px-4 py-4 text-right">Rendimiento</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </DataPanel>
-                                <DataPanel title="Lotes de Costura" icon={<Shirt className="w-6 h-6 mr-2 text-teal-500" />}>
-                                    <table className="w-full text-left text-sm text-stone-600 dark:text-stone-400">
-                                        <thead className="bg-stone-50 dark:bg-zinc-900 text-xs uppercase font-medium">
-                                            <tr>
-                                                <th className="px-4 py-3">ID</th>
-                                                <th className="px-4 py-3">Usuario</th>
-                                                <th className="px-4 py-3 text-right">Cant.</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {data.costura.map(c => (
-                                                <tr key={c.id} className="border-b border-stone-100 dark:border-zinc-800">
-                                                    <td className="px-4 py-3 font-medium">{c.id_registro}</td>
-                                                    <td className="px-4 py-3">{c.nombre_usuario}</td>
-                                                    <td className="px-4 py-3 font-bold text-right">{c.cantidad || c.total_confeccionado || 0}</td>
+                                            </thead>
+                                            <tbody className="divide-y divide-zinc-200 dark:divide-white/5">
+                                                {data.corte.map(c => (
+                                                    <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
+                                                        <td className="px-4 py-4 font-mono text-xs text-zinc-500">{c.id_registro}</td>
+                                                        <td className="px-4 py-4 font-bold text-zinc-900 dark:text-white">{c.nombre_usuario}</td>
+                                                        <td className="px-4 py-4 font-black text-right text-purple-600 dark:text-purple-400">{c.cantidad || c.total_cortado || 0} pcs</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl p-8 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-xl">
+                                    <h2 className="text-sm font-black uppercase tracking-[0.2em] mb-6 flex items-center text-zinc-800 dark:text-zinc-300">
+                                        <Shirt className="w-5 h-5 mr-3 text-teal-500" /> Registros de Costura
+                                    </h2>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="text-[10px] uppercase font-black tracking-widest text-zinc-500 border-b border-zinc-200 dark:border-white/5">
+                                                <tr>
+                                                    <th className="px-4 py-4">Lote ID</th>
+                                                    <th className="px-4 py-4">Operador</th>
+                                                    <th className="px-4 py-4 text-right">Rendimiento</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </DataPanel>
+                                            </thead>
+                                            <tbody className="divide-y divide-zinc-200 dark:divide-white/5">
+                                                {data.costura.map(c => (
+                                                    <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
+                                                        <td className="px-4 py-4 font-mono text-xs text-zinc-500">{c.id_registro}</td>
+                                                        <td className="px-4 py-4 font-bold text-zinc-900 dark:text-white">{c.nombre_usuario}</td>
+                                                        <td className="px-4 py-4 font-black text-right text-teal-600 dark:text-teal-400">{c.cantidad || c.total_confeccionado || 0} uds</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
-                )}
-
-                {ventaSeleccionada && (
-                    <ModalDetalleVenta
-                        venta={ventaSeleccionada}
-                        onClose={() => setVentaSeleccionada(null)}
-                    />
                 )}
             </div>
         </ProtectedRoute>
@@ -415,89 +446,29 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
     return (
         <button
             onClick={onClick}
-            className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${active ? "bg-stone-100 dark:bg-zinc-900 text-stone-900 dark:text-white shadow-sm" : "text-stone-500 hover:text-stone-900 dark:hover:text-white"
-                }`}
+            className={`flex items-center px-6 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black transition-all whitespace-nowrap ${
+                active 
+                ? "bg-zinc-900 text-white dark:bg-white dark:text-black shadow-lg scale-[1.02]" 
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/50 dark:hover:bg-white/5"
+            }`}
         >
             {icon} {label}
         </button>
     );
 }
 
-function StatCard({ icon, color, title, value }: { icon: React.ReactNode, color: 'green' | 'orange' | 'purple' | 'teal', title: string, value: string }) {
-    const colorClasses = {
-        green: "bg-green-100 text-green-600",
-        orange: "bg-orange-100 text-orange-600",
-        purple: "bg-purple-100 text-purple-600",
-        teal: "bg-teal-100 text-teal-600",
-    };
+function StatCard({ icon, title, value, subtitle, glowColor }: { icon: React.ReactNode, title: string, value: string, subtitle: string, glowColor: string }) {
     return (
-        <div className="bg-white dark:bg-zinc-950 p-6 rounded-2xl shadow-sm border border-stone-200 dark:border-zinc-800">
-            <div className="flex justify-between items-start mb-4">
-                <div className={`p-3 rounded-xl ${colorClasses[color]}`}>
+        <div className={`bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl p-6 rounded-[2rem] border border-zinc-200 dark:border-white/5 shadow-lg group transition-all duration-300 hover:-translate-y-1 ${glowColor}`}>
+            <div className="flex justify-between items-start mb-6">
+                <div className="p-3 bg-zinc-100 dark:bg-black rounded-xl border border-zinc-200 dark:border-white/10 group-hover:scale-110 transition-transform duration-300">
                     {icon}
                 </div>
             </div>
-            <p className="text-sm text-stone-500 font-medium">{title}</p>
-            <p className="text-3xl font-bold text-stone-900 dark:text-white mt-1">{value}</p>
-        </div>
-    );
-}
-
-function DataPanel({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) {
-    return (
-        <div className="bg-white dark:bg-zinc-950 p-6 rounded-2xl shadow-sm border border-stone-200 dark:border-zinc-800 overflow-x-auto">
-            <h2 className="text-xl font-bold mb-4 flex items-center">{icon} {title}</h2>
-            {children}
-        </div>
-    );
-}
-
-// Component Modal de Detalle de Venta
-function ModalDetalleVenta({ venta, onClose }: { venta: any, onClose: () => void }) {
-    if (!venta) return null;
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
-            <div className="bg-white dark:bg-zinc-950 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="p-6 border-b border-stone-100 dark:border-zinc-800 flex justify-between items-center bg-stone-50/50 dark:bg-zinc-900/50">
-                    <div>
-                        <h2 className="text-xl font-bold text-stone-900 dark:text-white">Detalle de Venta #{venta.id_venta}</h2>
-                        <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">Atendido por {venta.nombre_vendedor}</p>
-                    </div>
-                    <button onClick={onClose} className="rounded-full p-2 hover:bg-stone-200 dark:hover:bg-zinc-800 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-stone-500"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                    </button>
-                </div>
-
-                <div className="p-6 overflow-y-auto flex-1">
-                    <h3 className="text-sm font-bold text-stone-900 dark:text-white mb-4 uppercase tracking-wider">Productos Vendidos</h3>
-                    <div className="space-y-4">
-                        {venta.productos?.map((p: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center p-4 rounded-xl border border-stone-100 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900 flex-wrap gap-4">
-                                <div>
-                                    <p className="font-bold text-stone-900 dark:text-white capitalize">{p.categoria} {p.tipo_producto}</p>
-                                    <p className="text-sm text-stone-500 dark:text-stone-400 capitalize">
-                                        {p.publico} • Talla: {p.talla} • Color: {p.color}
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-sm text-stone-500 dark:text-stone-400">{p.cantidad} u. x S/ {p.precio_unitario?.toFixed(2)}</p>
-                                    <p className="font-bold text-stone-900 dark:text-white mt-1">S/ {p.subtotal?.toFixed(2)}</p>
-                                </div>
-                            </div>
-                        ))}
-                        {(!venta.productos || venta.productos.length === 0) && (
-                            <p className="text-center text-stone-500 dark:text-stone-400 py-4">No hay detalles de productos para esta venta.</p>
-                        )}
-                    </div>
-                </div>
-
-                <div className="p-6 border-t border-stone-100 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900">
-                    <div className="flex justify-between items-center">
-                        <p className="text-stone-500 font-medium">Total de Venta</p>
-                        <p className="text-2xl font-bold text-green-600">S/ {venta.total_venta?.toFixed(2)}</p>
-                    </div>
-                </div>
+            <div>
+                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.2em]">{title}</p>
+                <h3 className="text-4xl font-black tracking-tighter text-zinc-900 dark:text-white mt-1">{value}</h3>
+                <p className="text-xs text-zinc-400 font-medium mt-1">{subtitle}</p>
             </div>
         </div>
     );

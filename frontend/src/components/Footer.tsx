@@ -14,15 +14,16 @@ export default function Footer() {
                     <div>
                         <h4 className="text-white font-oswald text-xl uppercase tracking-widest mb-6">Explore</h4>
                         <ul className="space-y-4 font-oswald tracking-widest uppercase text-sm">
-                            <li><a href="#coleccion" className="hover:text-orange-500 transition-colors">Colección</a></li>
-                            <li><a href="#best-sellers" className="hover:text-orange-500 transition-colors">Lo Más Vendido</a></li>
-                            <li><a href="#nosotros" className="hover:text-orange-500 transition-colors">Acerca de nosotros</a></li>
+                            <li><a href="#categorias" className="hover:text-orange-500 transition-colors">Catálogo</a></li>
+                            <li><a href="#productos" className="hover:text-orange-500 transition-colors">Destacados</a></li>
+                            <li><a href="#calidad" className="hover:text-orange-500 transition-colors">Calidad</a></li>
+                            <li><a href="#nosotros" className="hover:text-orange-500 transition-colors">Sobre Nosotros</a></li>
                         </ul>
                     </div>
                     <div>
                         <h4 className="text-white font-oswald text-xl uppercase tracking-widest mb-6">Support</h4>
                         <ul className="space-y-4 font-oswald tracking-widest uppercase text-sm">
-                            <li><a href="#" className="hover:text-orange-500 transition-colors">Contacto</a></li>
+                            <li><a href="#ubicacion" className="hover:text-orange-500 transition-colors">Ubicación</a></li>
                             <li><a href="#" className="hover:text-orange-500 transition-colors">Envíos & Devoluciones</a></li>
                             <li><a href="#" className="hover:text-orange-500 transition-colors">Guía de tallas</a></li>
                         </ul>

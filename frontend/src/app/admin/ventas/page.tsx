@@ -138,7 +138,7 @@ export default function PaginaVentas() {
     const totalItems = carrito.reduce((acc, current) => acc + current.cantidad, 0);
 
     return (
-        <ProtectedRoute allowedRoles={["master", "sales"]}>
+        <ProtectedRoute allowedAreas={["master", "sales"]}>
             <div className="space-y-6">
                 <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-white">Punto de Venta</h1>
 

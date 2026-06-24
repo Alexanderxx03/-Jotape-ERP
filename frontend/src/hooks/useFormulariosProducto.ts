@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { getOpcionesFormulario, guardarNuevaOpcion, updateOpcionConfiguracion } from '@/lib/firestoreUtils';
+import { getOpcionesFormulario, guardarNuevaOpcion, updateOpcionConfiguracion, getTiposTela, guardarNuevoTipoTela } from '@/lib/firestoreUtils';
 import { toast } from 'sonner';
 
 const TALLAS_POR_PUBLICO = {
@@ -13,6 +13,8 @@ export function useFormulariosProducto() {
     // Datos dinámicos desde Firestore
     const [estructuraProductos, setEstructuraProductos] = useState<Record<string, string[]>>({});
     const [coloresDisponibles, setColoresDisponibles] = useState<string[]>([]);
+    const [talleresDisponibles, setTalleresDisponibles] = useState<string[]>([]);
+    const [tiposTelaDisponibles, setTiposTelaDisponibles] = useState<string[]>(['Franela', 'Jersey', 'Fresh Terry']);
 
     // Estado del Formulario
     const [categoria, setCategoria] = useState<string>('');
@@ -32,6 +34,9 @@ export function useFormulariosProducto() {
                 const data: any = await getOpcionesFormulario();
                 setEstructuraProductos(data.categorias || {});
                 setColoresDisponibles(data.colores || []);
+                setTalleresDisponibles(data.talleres || []);
+                const tiposTela = await getTiposTela();
+                setTiposTelaDisponibles(tiposTela);
             } catch (error) {
                 console.error("Error al cargar opciones de formulario", error);
                 toast.error("No se pudieron cargar las configuraciones.");
@@ -55,7 +60,7 @@ export function useFormulariosProducto() {
     const [modalConfig, setModalConfig] = useState<{
         isOpen: boolean;
         modo: 'crear' | 'editar' | 'eliminar';
-        tipo: 'categoria' | 'tipo_prenda' | 'color' | null;
+        tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller' | null;
         valorActual?: string;
         parentCat?: string;
         title: string;
@@ -66,44 +71,44 @@ export function useFormulariosProducto() {
     }>({ isOpen: false, modo: 'crear', tipo: null, title: '' });
     const [isSubmittingModal, setIsSubmittingModal] = useState(false);
 
-    const abrirModalNuevo = (tipo: 'categoria' | 'tipo_prenda' | 'color') => {
+    const abrirModalNuevo = (tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller') => {
         setModalConfig({
             isOpen: true,
             modo: 'crear',
             tipo,
             title: tipo === 'categoria' ? 'Añadir Nueva Categoría' :
                 tipo === 'tipo_prenda' ? 'Añadir Nuevo Tipo de Prenda' :
-                    'Añadir Nuevo Color',
+                    tipo === 'color' ? 'Añadir Nuevo Color' : 'Añadir Nuevo Taller',
             placeholder: tipo === 'categoria' ? 'Ej: Pantalones' :
                 tipo === 'tipo_prenda' ? 'Ej: Falda Escolar' :
-                    'Ej: Azul Marino',
+                    tipo === 'color' ? 'Ej: Azul Marino' : 'Ej: Taller Maria',
             initialValue: '',
             isDelete: false
         });
     };
 
-    const abrirModalEditar = (tipo: 'categoria' | 'tipo_prenda' | 'color', valorActual: string, parentCat?: string) => {
+    const abrirModalEditar = (tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller', valorActual: string, parentCat?: string) => {
         setModalConfig({
             isOpen: true,
             modo: 'editar',
             tipo,
             valorActual,
             parentCat,
-            title: `Renombrar ${tipo === 'categoria' ? 'Categoría' : tipo === 'tipo_prenda' ? 'Tipo de Prenda' : 'Color'}`,
+            title: `Renombrar ${tipo === 'categoria' ? 'Categoría' : tipo === 'tipo_prenda' ? 'Tipo de Prenda' : tipo === 'color' ? 'Color' : 'Taller'}`,
             placeholder: `Nuevo nombre para '${valorActual}':`,
             initialValue: valorActual,
             isDelete: false
         });
     };
 
-    const abrirModalEliminar = (tipo: 'categoria' | 'tipo_prenda' | 'color', valorActual: string, parentCat?: string) => {
+    const abrirModalEliminar = (tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller', valorActual: string, parentCat?: string) => {
         setModalConfig({
             isOpen: true,
             modo: 'eliminar',
             tipo,
             valorActual,
             parentCat,
-            title: `Eliminar ${tipo === 'categoria' ? 'Categoría' : tipo === 'tipo_prenda' ? 'Tipo de Prenda' : 'Color'}`,
+            title: `Eliminar ${tipo === 'categoria' ? 'Categoría' : tipo === 'tipo_prenda' ? 'Tipo de Prenda' : tipo === 'color' ? 'Color' : 'Taller'}`,
             description: `¿Estás seguro que deseas eliminar '${valorActual}' de la lista de opciones de forma permanente?`,
             isDelete: true
         });
@@ -118,11 +123,12 @@ export function useFormulariosProducto() {
         if (!modalConfig.tipo) return;
         setIsSubmittingModal(true);
         let exito = false;
-        
+
         if (modalConfig.modo === 'crear') {
             if (modalConfig.tipo === 'categoria') exito = await asyncAddCategoria(valor);
             if (modalConfig.tipo === 'tipo_prenda') exito = await asyncAddTipoProducto(valor);
             if (modalConfig.tipo === 'color') exito = await asyncAddColor(valor);
+            if (modalConfig.tipo === 'taller') exito = await asyncAddTaller(valor);
         } else if (modalConfig.modo === 'editar') {
             exito = await asyncEditOpcion(modalConfig.tipo, modalConfig.valorActual!, valor, modalConfig.parentCat);
         } else if (modalConfig.modo === 'eliminar') {
@@ -194,7 +200,33 @@ export function useFormulariosProducto() {
         }
     };
 
-    const asyncEditOpcion = async (tipo: 'categoria' | 'tipo_prenda' | 'color', valorActual: string, nuevoValor: string, parentCat?: string) => {
+    const asyncAddTaller = async (nuevoTaller: string) => {
+        if (!nuevoTaller.trim()) return false;
+        try {
+            await guardarNuevaOpcion('taller', { nuevoValor: nuevoTaller });
+            setTalleresDisponibles(prev => [...prev, nuevoTaller]);
+            toast.success("Taller agregado.");
+            return true;
+        } catch (error) {
+            toast.error("Error al guardar el taller.");
+            return false;
+        }
+    };
+
+    const asyncAddTipoTela = async (nuevoTipo: string) => {
+        if (!nuevoTipo.trim()) return false;
+        try {
+            await guardarNuevoTipoTela(nuevoTipo);
+            setTiposTelaDisponibles(prev => [...prev, nuevoTipo]);
+            toast.success("Tipo de tela agregado.");
+            return true;
+        } catch (error) {
+            toast.error("Error al guardar el tipo de tela.");
+            return false;
+        }
+    };
+
+    const asyncEditOpcion = async (tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller', valorActual: string, nuevoValor: string, parentCat?: string) => {
         if (!nuevoValor.trim() || nuevoValor === valorActual) return false;
         try {
             await updateOpcionConfiguracion(tipo, {
@@ -204,17 +236,18 @@ export function useFormulariosProducto() {
                 categoria: parentCat
             });
             toast.success("Actualizado correctamente.");
-            
+
             // Reload local data
             const data: any = await getOpcionesFormulario();
             setEstructuraProductos(data.categorias || {});
             setColoresDisponibles(data.colores || []);
-            
+            setTalleresDisponibles(data.talleres || []);
+
             // Update currently selected if it was the one modified
             if (tipo === 'categoria' && categoria === valorActual) setCategoria(nuevoValor.trim());
             if (tipo === 'tipo_prenda' && tipoProducto === valorActual) setTipoProducto(nuevoValor.trim());
             if (tipo === 'color' && color === valorActual) setColor(nuevoValor.trim());
-            
+
             return true;
         } catch (error) {
             toast.error("Error al editar la opción.");
@@ -222,7 +255,7 @@ export function useFormulariosProducto() {
         }
     };
 
-    const asyncDeleteOpcion = async (tipo: 'categoria' | 'tipo_prenda' | 'color', valorActual: string, parentCat?: string) => {
+    const asyncDeleteOpcion = async (tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller', valorActual: string, parentCat?: string) => {
         try {
             await updateOpcionConfiguracion(tipo, {
                 action: 'eliminar',
@@ -230,12 +263,13 @@ export function useFormulariosProducto() {
                 categoria: parentCat
             });
             toast.success("Eliminado correctamente.");
-            
+
             // Reload local data
             const data: any = await getOpcionesFormulario();
             setEstructuraProductos(data.categorias || {});
             setColoresDisponibles(data.colores || []);
-            
+            setTalleresDisponibles(data.talleres || []);
+
             // Clear current selection if it was deleted
             if (tipo === 'categoria' && categoria === valorActual) {
                 setCategoria('');
@@ -243,7 +277,7 @@ export function useFormulariosProducto() {
             }
             if (tipo === 'tipo_prenda' && tipoProducto === valorActual) setTipoProducto('');
             if (tipo === 'color' && color === valorActual) setColor('');
-            
+
             return true;
         } catch (error) {
             toast.error("Error al eliminar la opción.");
@@ -273,12 +307,15 @@ export function useFormulariosProducto() {
         setCantidad,
         setTipoProducto,
         setTalla,
-        // Derivados 
+        setTiposTelaDisponibles,
+        // Derivados
         tiposDisponibles,
         tallasDisponibles,
         categoriasDisponibles: Object.keys(estructuraProductos),
         publicosDisponibles: Object.keys(TALLAS_POR_PUBLICO),
         coloresDisponibles,
+        talleresDisponibles,
+        tiposTelaDisponibles,
         isCargandoOpciones,
         // Custom Modal UI
         modalConfig,
@@ -296,6 +333,8 @@ export function useFormulariosProducto() {
         asyncAddCategoria,
         asyncAddTipoProducto,
         asyncAddColor,
+        asyncAddTaller,
+        asyncAddTipoTela,
         asyncEditOpcion,
         asyncDeleteOpcion
     };

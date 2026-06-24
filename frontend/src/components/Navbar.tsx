@@ -18,6 +18,13 @@ export default function Navbar() {
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
+    const navLinks = [
+        { href: "#categorias", label: "Catálogo" },
+        { href: "#productos", label: "Destacados" },
+        { href: "#calidad", label: "Calidad" },
+        { href: "#nosotros", label: "Nosotros" },
+    ];
+
     return (
         <motion.header
             initial={{ y: -100 }}
@@ -34,9 +41,11 @@ export default function Navbar() {
 
                     {/* Desktop Menu - Brutalist Pill */}
                     <nav className="hidden md:flex space-x-1 items-center bg-black/40 backdrop-blur-md px-2 py-1.5 rounded-full border border-zinc-800 shadow-2xl">
-                        <Link href="#coleccion" className="px-5 py-2 text-xs font-oswald uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-full transition-all">Colección</Link>
-                        <Link href="#best-sellers" className="px-5 py-2 text-xs font-oswald uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-full transition-all">Lo Más Vendido</Link>
-                        <Link href="#calidad" className="px-5 py-2 text-xs font-oswald uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-full transition-all">Calidad</Link>
+                        {navLinks.map((link) => (
+                            <Link key={link.href} href={link.href} className="px-5 py-2 text-xs font-oswald uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-full transition-all">
+                                {link.label}
+                            </Link>
+                        ))}
                     </nav>
 
                     {/* Actions */}
@@ -75,10 +84,12 @@ export default function Navbar() {
                         className="fixed inset-0 bg-black z-0 flex flex-col justify-center px-6"
                     >
                         <div className="flex flex-col space-y-6 text-center">
-                            <Link onClick={() => setIsMobileMenuOpen(false)} href="#coleccion" className="text-4xl font-oswald font-bold uppercase tracking-tighter text-zinc-400 hover:text-white transition-colors">Colección</Link>
-                            <Link onClick={() => setIsMobileMenuOpen(false)} href="#best-sellers" className="text-4xl font-oswald font-bold uppercase tracking-tighter text-zinc-400 hover:text-white transition-colors">Lo Más Vendido</Link>
-                            <Link onClick={() => setIsMobileMenuOpen(false)} href="#calidad" className="text-4xl font-oswald font-bold uppercase tracking-tighter text-zinc-400 hover:text-white transition-colors">Calidad</Link>
-                            <div className="h-px bg-zinc-900 w-full my-4"></div>
+                            {navLinks.map((link) => (
+                                <Link key={link.href} onClick={() => setIsMobileMenuOpen(false)} href={link.href} className="text-4xl font-oswald font-bold uppercase tracking-tighter text-zinc-400 hover:text-white transition-colors">
+                                    {link.label}
+                                </Link>
+                            ))}
+                            <div className="h-px bg-zinc-900 w-full my-4" />
                             <Link onClick={() => setIsMobileMenuOpen(false)} href="/admin/login" className="text-xl font-oswald text-orange-600 tracking-widest uppercase">Admin Login</Link>
                         </div>
                     </motion.div>

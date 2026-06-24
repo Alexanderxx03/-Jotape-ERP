@@ -9,16 +9,33 @@ import JotaPeLogo from "@/components/JotaPeLogo";
 
 type AuthMode = "login" | "register";
 
+type Area = "sales" | "inventory" | "cutting" | "sewing";
+
+const AREAS_DISPONIBLES: { value: Area; label: string }[] = [
+    { value: "sales", label: "Ventas (Punto de Venta)" },
+    { value: "inventory", label: "Almacén e Inventario" },
+    { value: "cutting", label: "Área de Corte" },
+    { value: "sewing", label: "Área de Costura" },
+];
+
 export default function LoginPage() {
     const [mode, setMode] = useState<AuthMode>("login");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [displayName, setDisplayName] = useState("");
-    const [role, setRole] = useState("sales");
+    const [areasSeleccionadas, setAreasSeleccionadas] = useState<Area[]>(["sales"]);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const [loading, setLoading] = useState(false);
     const router = useRouter();
+
+    const toggleArea = (area: Area) => {
+        setAreasSeleccionadas(prev =>
+            prev.includes(area)
+                ? prev.filter(a => a !== area)
+                : [...prev, area]
+        );
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -32,14 +49,20 @@ export default function LoginPage() {
                 router.push("/admin");
             } else {
                 // Registration Flow
+                if (areasSeleccionadas.length === 0) {
+                    setError("Selecciona al menos un área de acceso.");
+                    setLoading(false);
+                    return;
+                }
+
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
 
-                // Save user profile and role in Firestore
+                // Save user profile with areas_acceso in Firestore
                 await setDoc(doc(db, "users", user.uid), {
                     email: user.email,
                     displayName: displayName || email.split("@")[0],
-                    role: role,
+                    areas_acceso: areasSeleccionadas,
                     createdAt: new Date()
                 });
 
@@ -135,18 +158,37 @@ export default function LoginPage() {
 
                         {mode === "register" && (
                             <div>
-                                <label className="block text-sm font-medium text-stone-300 mb-1">Rol de Empleado</label>
-                                <select
-                                    value={role}
-                                    onChange={(e) => setRole(e.target.value)}
-                                    className="appearance-none rounded-xl relative block w-full px-4 py-3 border border-zinc-700 text-white bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-orange-600 sm:text-sm"
-                                >
-                                    <option value="sales">Ventas (Punto de Venta)</option>
-                                    <option value="inventory">Almacén e Inventario</option>
-                                    <option value="cutting">Área de Corte</option>
-                                    <option value="sewing">Área de Costura</option>
-                                    <option value="master">Administrador General (Master)</option>
-                                </select>
+                                <label className="block text-sm font-medium text-stone-300 mb-2">Áreas de Acceso</label>
+                                <div className="space-y-2">
+                                    {AREAS_DISPONIBLES.map(area => (
+                                        <button
+                                            key={area.value}
+                                            type="button"
+                                            onClick={() => toggleArea(area.value)}
+                                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all text-sm ${areasSeleccionadas.includes(area.value)
+                                                ? "bg-orange-600/20 border-orange-500 text-white"
+                                                : "bg-zinc-950 border-zinc-700 text-stone-400 hover:border-zinc-500 hover:text-stone-300"
+                                                }`}
+                                        >
+                                            <span>{area.label}</span>
+                                            <span className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-all ${areasSeleccionadas.includes(area.value)
+                                                ? "bg-orange-500 border-orange-500"
+                                                : "border-zinc-600"
+                                                }`}>
+                                                {areasSeleccionadas.includes(area.value) && (
+                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                )}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-stone-500 mt-2">
+                                    {areasSeleccionadas.length === 0
+                                        ? "⚠️ Selecciona al menos un área"
+                                        : `${areasSeleccionadas.length} área(s) seleccionada(s)`}
+                                </p>
                             </div>
                         )}
                     </div>

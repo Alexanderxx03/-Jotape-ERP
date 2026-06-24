@@ -1,4 +1,4 @@
-import { doc, runTransaction, collection, addDoc, serverTimestamp, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, runTransaction, collection, addDoc, serverTimestamp, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 
 /**
@@ -87,10 +87,20 @@ export async function guardarEntradaInventario(registro: any) {
 // INVENTARIO - ROLLOS DE TELA
 // ==========================================
 
-export const guardarIngresoRollo = async (registro: any) => {
+export const guardarIngresoRollo = async (registro: {
+    tipo_tela: string;
+    color: string;
+    cantidad_rollos: number;
+    id_usuario: string;
+}) => {
     try {
         const docRef = await addDoc(collection(db, 'inventario_rollos'), {
-            ...registro,
+            tipo_tela: registro.tipo_tela,
+            color: registro.color,
+            cantidad_rollos: registro.cantidad_rollos,
+            cantidad_original: registro.cantidad_rollos,
+            disponible: true,
+            id_usuario: registro.id_usuario,
             fecha_registro: serverTimestamp()
         });
         return docRef.id;
@@ -101,9 +111,117 @@ export const guardarIngresoRollo = async (registro: any) => {
 };
 
 /**
- * Guarda un registro de producción (Corte o Costura)
+ * Obtiene los rollos de tela disponibles para corte
  */
-export async function guardarRegistroProduccion(coleccion: 'registros_corte' | 'registros_costura', registro: any) {
+export async function getRollosDisponibles() {
+    try {
+        const q = query(
+            collection(db, 'inventario_rollos'),
+            orderBy('fecha_registro', 'desc')
+        );
+        const snap = await getDocs(q);
+        const rollos: any[] = [];
+        snap.forEach(docSnap => {
+            const data = docSnap.data();
+            // Filtrar solo los que están disponibles (campo disponible puede no existir en datos antiguos)
+            if (data.disponible !== false && data.cantidad_rollos > 0) {
+                rollos.push({ id: docSnap.id, ...data });
+            }
+        });
+        return rollos;
+    } catch (error) {
+        console.error("Error al obtener rollos disponibles:", error);
+        return [];
+    }
+}
+
+/**
+ * Desconta la cantidad de rollos usados después de un corte
+ */
+export async function descontarRollos(rolloId: string, cantidadUsada: number) {
+    try {
+        const rolloRef = doc(db, 'inventario_rollos', rolloId);
+        await runTransaction(db, async (transaction) => {
+            const rolloDoc = await transaction.get(rolloRef);
+            if (!rolloDoc.exists()) throw new Error("El rollo no existe");
+
+            const data = rolloDoc.data();
+            const cantidadActual = data.cantidad_rollos || 0;
+            const nuevaCantidad = cantidadActual - cantidadUsada;
+
+            if (nuevaCantidad <= 0) {
+                transaction.update(rolloRef, {
+                    cantidad_rollos: 0,
+                    disponible: false
+                });
+            } else {
+                transaction.update(rolloRef, { cantidad_rollos: nuevaCantidad });
+            }
+        });
+        return true;
+    } catch (error) {
+        console.error("Error al descontar rollos:", error);
+        throw error;
+    }
+}
+
+/**
+ * Guarda una nueva opción de tipo de tela
+ */
+export async function guardarNuevoTipoTela(nuevoTipo: string) {
+    const configRef = doc(db, 'configuracion', 'opciones_formulario');
+    try {
+        await runTransaction(db, async (transaction) => {
+            const configDoc = await transaction.get(configRef);
+            if (!configDoc.exists()) {
+                const defaultData = {
+                    categorias: {},
+                    colores: [],
+                    tipos_tela: [nuevoTipo]
+                };
+                transaction.set(configRef, defaultData);
+            } else {
+                const configData = configDoc.data();
+                if (!configData.tipos_tela) configData.tipos_tela = [];
+                if (!configData.tipos_tela.includes(nuevoTipo)) {
+                    configData.tipos_tela.push(nuevoTipo);
+                    transaction.update(configRef, { tipos_tela: configData.tipos_tela });
+                }
+            }
+        });
+        return true;
+    } catch (error) {
+        console.error("Error al guardar tipo de tela:", error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene los tipos de tela desde la configuración
+ */
+export async function getTiposTela(): Promise<string[]> {
+    const configRef = doc(db, 'configuracion', 'opciones_formulario');
+    try {
+        const docSnap = await getDoc(configRef);
+        if (!docSnap.exists()) {
+            return ['Franela', 'Jersey', 'Fresh Terry'];
+        }
+        const data = docSnap.data();
+        return data.tipos_tela || ['Franela', 'Jersey', 'Fresh Terry'];
+    } catch (error) {
+        console.error("Error al obtener tipos de tela:", error);
+        return ['Franela', 'Jersey', 'Fresh Terry'];
+    }
+}
+
+/**
+ * Guarda un registro de producción (Corte o Costura)
+ * Para corte: incluye información del rollo seleccionado y tallas
+ */
+export async function guardarRegistroProduccion(
+    coleccion: 'registros_corte' | 'registros_costura',
+    registro: any
+) {
     try {
         const contadorName = coleccion === 'registros_corte' ? 'corte' : 'costura';
         const prefijo = coleccion === 'registros_corte' ? 'CT-' : 'CS-';
@@ -130,7 +248,7 @@ export async function guardarRegistroProduccion(coleccion: 'registros_corte' | '
 // FORMULARIOS - CONFIGURACION
 // ==========================================
 
-export const updateOpcionConfiguracion = async (opcion: 'categoria' | 'tipo_prenda' | 'color', data: any) => {
+export const updateOpcionConfiguracion = async (opcion: 'categoria' | 'tipo_prenda' | 'color' | 'taller', data: any) => {
     const configRef = doc(db, 'configuracion', 'opciones_formulario');
     try {
         await runTransaction(db, async (transaction) => {
@@ -149,6 +267,9 @@ export const updateOpcionConfiguracion = async (opcion: 'categoria' | 'tipo_pren
                 } else if (opcion === 'color') {
                     configData.colores = (configData.colores || []).filter((x: string) => x !== data.valorActual);
                     transaction.update(configRef, { colores: configData.colores });
+                } else if (opcion === 'taller') {
+                    configData.talleres = (configData.talleres || []).filter((x: string) => x !== data.valorActual);
+                    transaction.update(configRef, { talleres: configData.talleres });
                 }
             } else if (data.action === 'editar') {
                 if (opcion === 'categoria') {
@@ -168,6 +289,12 @@ export const updateOpcionConfiguracion = async (opcion: 'categoria' | 'tipo_pren
                     if (idx !== -1) arr[idx] = data.nuevoValor;
                     configData.colores = arr;
                     transaction.update(configRef, { colores: configData.colores });
+                } else if (opcion === 'taller') {
+                    const arr = configData.talleres || [];
+                    const idx = arr.indexOf(data.valorActual);
+                    if (idx !== -1) arr[idx] = data.nuevoValor;
+                    configData.talleres = arr;
+                    transaction.update(configRef, { talleres: configData.talleres });
                 }
             }
         });
@@ -197,7 +324,8 @@ export async function getOpcionesFormulario() {
                         Buzos: ['Joggers', 'Baggy', 'Parachute'],
                         Shorts: ['Urbano', 'Deportivo'],
                     },
-                    colores: ['Negro', 'Blanco', 'Gris', 'Azul Marino']
+                    colores: ['Negro', 'Blanco', 'Gris', 'Azul Marino'],
+                    talleres: []
                 };
                 transaction.set(configRef, defaultData);
                 return defaultData;
@@ -214,9 +342,9 @@ export async function getOpcionesFormulario() {
 }
 
 /**
- * Guarda una nueva opción (categoría, tipo de prenda o color) en Firestore
+ * Guarda una nueva opción (categoría, tipo de prenda, color o taller) en Firestore
  */
-export async function guardarNuevaOpcion(tipo: 'categoria' | 'tipo_prenda' | 'color', data: { categoria?: string, nuevoValor: string }) {
+export async function guardarNuevaOpcion(tipo: 'categoria' | 'tipo_prenda' | 'color' | 'taller', data: { categoria?: string, nuevoValor: string }) {
     const configRef = doc(db, 'configuracion', 'opciones_formulario');
 
     try {
@@ -247,6 +375,13 @@ export async function guardarNuevaOpcion(tipo: 'categoria' | 'tipo_prenda' | 'co
                     configData.colores.push(data.nuevoValor);
                     transaction.update(configRef, { colores: configData.colores });
                 }
+            } else if (tipo === 'taller' && data.nuevoValor) {
+                // Añadir nuevo taller
+                if (!configData.talleres) configData.talleres = [];
+                if (!configData.talleres.includes(data.nuevoValor)) {
+                    configData.talleres.push(data.nuevoValor);
+                    transaction.update(configRef, { talleres: configData.talleres });
+                }
             }
         });
         return true;
@@ -255,3 +390,56 @@ export async function guardarNuevaOpcion(tipo: 'categoria' | 'tipo_prenda' | 'co
         throw e;
     }
 }
+
+// ==========================================
+// ENVÍO A TALLERES
+// ==========================================
+
+/**
+ * Guarda un registro de envío de corte a un taller
+ */
+export async function guardarEnvioTaller(registro: any) {
+    try {
+        const id_num = await getNextId('envio_taller');
+        const id_envio = `ET-${id_num.toString().padStart(5, '0')}`;
+
+        const docRef = doc(db, 'envios_talleres', id_envio);
+
+        await setDoc(docRef, {
+            id_envio: id_envio,
+            ...registro,
+            estado: 'pendiente', // Por defecto pendiente de recepción
+            fecha_envio: serverTimestamp()
+        });
+
+        return id_envio;
+    } catch (error) {
+        console.error("Error al guardar envío a taller:", error);
+        throw error;
+    }
+}
+
+/**
+ * Marca un envío como recibido
+ */
+export async function marcarEnvioRecibido(id_envio: string, detallesRecepcion?: { variantes: any[]; total_recibido: number }) {
+    try {
+        const docRef = doc(db, 'envios_talleres', id_envio);
+        const updateData: any = {
+            estado: 'recibido',
+            fecha_recepcion: serverTimestamp()
+        };
+        
+        if (detallesRecepcion) {
+            updateData.variantes_recibidas = detallesRecepcion.variantes;
+            updateData.total_recibido = detallesRecepcion.total_recibido;
+        }
+
+        await updateDoc(docRef, updateData);
+        return true;
+    } catch (error) {
+        console.error("Error al marcar envío como recibido:", error);
+        throw error;
+    }
+}
+

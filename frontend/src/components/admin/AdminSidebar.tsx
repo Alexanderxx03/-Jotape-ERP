@@ -1,6 +1,6 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { LogOut, LayoutDashboard, ShoppingCart, Package, Scissors, Shirt, X, Settings } from "lucide-react";
+import { LogOut, LayoutDashboard, ShoppingCart, Package, Scissors, Shirt, X, Settings, Play, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,23 +17,33 @@ export default function AdminSidebar({ isOpen = false, setIsOpen }: AdminSidebar
 
     if (!user) return null;
 
-    // Determine which links to show based on role
+    // Helper to check if user has access to an area
+    const hasArea = (area: string) => {
+        // Master has access to everything
+        if (user.areas_acceso.includes("master")) return true;
+        return user.areas_acceso.includes(area as any);
+    };
+
+    // Determine which links to show based on areas_acceso
     const links = [];
 
-    if (user.role === 'master' || user.role === 'sales') {
-        links.push({ href: "/admin/ventas", label: "Punto de Venta", icon: ShoppingCart });
-    }
-    if (user.role === 'master' || user.role === 'inventory') {
+
+    if (hasArea("inventory")) {
         links.push({ href: "/admin/inventario", label: "Inventario", icon: Package });
+        links.push({ href: "/admin/predicciones", label: "Predicciones IA", icon: Sparkles });
     }
-    if (user.role === 'master' || user.role === 'cutting') {
+    if (hasArea("salida")) {
+        links.push({ href: "/admin/salida", label: "Salidas de Almacén", icon: LogOut });
+    }
+    if (hasArea("cutting")) {
         links.push({ href: "/admin/corte", label: "Área de Corte", icon: Scissors });
     }
-    if (user.role === 'master' || user.role === 'sewing') {
+    if (hasArea("sewing")) {
         links.push({ href: "/admin/costura", label: "Área de Costura", icon: Shirt });
     }
-    if (user.role === 'master') {
+    if (hasArea("master")) {
         links.push({ href: "/admin", label: "Dashboard Master", icon: LayoutDashboard });
+        links.push({ href: "/admin/pruebas", label: "Pruebas del Sistema", icon: Play });
         links.push({ href: "/admin/configuracion", label: "Configuración", icon: Settings });
     }
 
@@ -52,7 +62,9 @@ export default function AdminSidebar({ isOpen = false, setIsOpen }: AdminSidebar
                     <div>
                         <JotaPeLogo className="h-8 w-auto hidden md:block drop-shadow-sm" />
                         <JotaPeLogo className="h-6 w-auto md:hidden drop-shadow-sm" />
-                        <p className="text-xs text-stone-500 mt-1 capitalize font-medium">Panel: {user.role}</p>
+                        <p className="text-xs text-stone-500 mt-1 font-medium">
+                            {user.areas_acceso.includes("master") ? "Panel: Master" : `${user.areas_acceso.length} área(s)`}
+                        </p>
                     </div>
                     {setIsOpen && (
                         <button

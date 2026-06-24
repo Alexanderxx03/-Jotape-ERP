@@ -8,16 +8,16 @@ Bienvenido al repositorio oficial de **Jotape**, el sistema integral de administ
 
 Este repositorio cuenta con una extensa documentación organizada por Sprints, en donde se detalla y sustenta toda la planeación de Ingeniería de Software detrás de la construcción de esta plataforma.
 
-Puedes navegar hacia nuestra "Wiki local" entrando al directorio de **[Documentación Oficial (`/docs`)](./docs)**.
+Puedes navegar hacia nuestra "Wiki local" entrando al directorio de **[Documentación Oficial (`/docs`)](https://github.com/Alexanderxx03/-Jotape-ERP/tree/main/docs)**.
 
 ### 🗂️ Documentos de Inicio (Sprint 0)
-- **[Problema y Oportunidad de Negocio](./docs/sprint0/01_problema.md)**
-- **[Project Charter (Acta de Constitución)](./docs/sprint0/05_project_charter.md)** 
-- **[Supuestos y Restricciones](./docs/sprint0/06_supuestos_restricciones.md)**
-- **[Equipo de Desarrollo](./docs/sprint0/07_equipo.md)**
-- **[Estructura y Lineamientos del Repositorio](./docs/sprint0/08_repositorio_github.md)**
-- **[Plan de Prácticas Profesionales](./docs/sprint0/09_plan_de_actividades.md)** *(Si aplica al equipo actual)*
-- **[Historias de Usuario / Product Backlog](./docs/sprint0/09_historias_de_usuario.md)**
+- **[Problema y Oportunidad de Negocio](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/01_problema.md)**
+- **[Project Charter (Acta de Constitución)](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/05_project_charter.md)** 
+- **[Supuestos y Restricciones](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/06_supuestos_restricciones.md)**
+- **[Equipo de Desarrollo](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/07_equipo.md)**
+- **[Estructura y Lineamientos del Repositorio](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/08_repositorio_github.md)**
+- **[Plan de Prácticas Profesionales](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/09_plan_de_actividades.md)** *(Si aplica al equipo actual)*
+- **[Historias de Usuario / Product Backlog](https://github.com/Alexanderxx03/-Jotape-ERP/blob/main/docs/planificacion/09_historias_de_usuario.md)**
 
 ---
 
